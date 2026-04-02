@@ -1,0 +1,33 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ── Data files (large, not for version control) ───────────────────────────────
+Data/
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.csv
+
+# ── Virtual environments / conda ──────────────────────────────────────────────
+.env
+.venv
+env/
+venv/
+.conda/
+
+# ── IDEs ─────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+
+# ── OS generated ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Jupyter (if ever used) ────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
