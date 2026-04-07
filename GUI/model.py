@@ -184,6 +184,10 @@ class SequenceWorker(QtCore.QObject):
             return float(WIDTH_FACTOR * abs(popt[2]) * self.pixel_size_mm)
         elif self.y_var_name == "Cloud Width Y (mm)":
             return float(WIDTH_FACTOR * abs(popt[3]) * self.pixel_size_mm)
+        elif self.y_var_name == "Cloud Width X (m)":
+            return float(WIDTH_FACTOR * abs(popt[2]) * self.pixel_size_mm * 1e-3)
+        elif self.y_var_name == "Cloud Width Y (m)":
+            return float(WIDTH_FACTOR * abs(popt[3]) * self.pixel_size_mm * 1e-3)
         else:
             # Default: Light Absorption (Total Area)
             return float(np.sum(fitted_img))

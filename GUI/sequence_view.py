@@ -2,10 +2,12 @@
 
 Provides the UI for selecting multiple scans from an HDF5 file, choosing
 x/y variables, running batch Gaussian fits, and visualizing the results.
+Supports post-processing curve fits (linear, exponential, Gaussian, temperature)
+on the resulting scatter plot.
 """
 
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtWidgets, QtGui
 
 
 class SequenceWindow(QtWidgets.QMainWindow):
@@ -29,6 +31,7 @@ class SequenceWindow(QtWidgets.QMainWindow):
     showMetadataRequested = QtCore.pyqtSignal()
     xVariableChanged = QtCore.pyqtSignal(str)
     saveCsvRequested = QtCore.pyqtSignal(str)
+    fitScatterRequested = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         """Initializes the sequence window.
@@ -47,6 +50,11 @@ class SequenceWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(main_widget)
         layout = QtWidgets.QHBoxLayout(main_widget)
 
+        # --- Left side: plot + results ---
+        left_widget = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
         # --- Plot Area ---
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground('w')
@@ -57,7 +65,42 @@ class SequenceWindow(QtWidgets.QMainWindow):
             brush=pg.mkBrush(0, 114, 178)
         )
         self.plot_widget.addItem(self.scatter_item)
-        layout.addWidget(self.plot_widget, stretch=2)
+
+        # Fit overlay curve on the scatter plot
+        self.fit_curve_item = pg.PlotDataItem(
+            pen=pg.mkPen(color=(220, 50, 50), width=2.5)
+        )
+        self.plot_widget.addItem(self.fit_curve_item)
+
+        left_layout.addWidget(self.plot_widget, stretch=3)
+
+        # --- Fit Results Panel ---
+        self.results_group = QtWidgets.QGroupBox("Fit Results")
+        self.results_group.setVisible(False)
+        results_layout = QtWidgets.QVBoxLayout(self.results_group)
+
+        self.lbl_fit_model_used = QtWidgets.QLabel("")
+        _bold = QtGui.QFont()
+        _bold.setBold(True)
+        self.lbl_fit_model_used.setFont(_bold)
+        results_layout.addWidget(self.lbl_fit_model_used)
+
+        self.results_table = QtWidgets.QTableWidget()
+        self.results_table.setColumnCount(3)
+        self.results_table.setHorizontalHeaderLabels(["Parameter", "Value", "± Uncertainty"])
+        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.results_table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.results_table.setMaximumHeight(160)
+        results_layout.addWidget(self.results_table)
+
+        self.lbl_fit_quality = QtWidgets.QLabel("")
+        self.lbl_fit_quality.setWordWrap(True)
+        results_layout.addWidget(self.lbl_fit_quality)
+
+        left_layout.addWidget(self.results_group, stretch=1)
+
+        layout.addWidget(left_widget, stretch=2)
 
         # --- Control Panel ---
         control_panel = QtWidgets.QWidget()
@@ -99,8 +142,62 @@ class SequenceWindow(QtWidgets.QMainWindow):
             "Cloud Width Y (pixels)",
             "Cloud Width X (mm)",
             "Cloud Width Y (mm)",
+            "Cloud Width X (m)",
+            "Cloud Width Y (m)",
         ])
         control_layout.addWidget(self.combo_y)
+
+        # --- Scatter Plot Fit Section ---
+        control_layout.addWidget(QtWidgets.QLabel("─" * 30))
+        control_layout.addWidget(QtWidgets.QLabel("Fit on Scatter Plot:"))
+        self.combo_scatter_fit = QtWidgets.QComboBox()
+        self.combo_scatter_fit.addItems([
+            "None",
+            "Linear  (y = a·x + b)",
+            "Exponential  (y = A·exp(-x/τ) + C)",
+            "Gaussian 1D  (y = A·exp(-(x-x0)²/2σ²) + B)",
+            "Temperature TOF  (σ²(t) = σ₀² + kT/m·t²)",
+        ])
+        control_layout.addWidget(self.combo_scatter_fit)
+
+        self.btn_fit_scatter = QtWidgets.QPushButton("Fit Scatter Plot")
+        self.btn_fit_scatter.setStyleSheet(
+            "background-color: #e67e22; color: white; "
+            "font-weight: bold; padding: 6px;"
+        )
+        self.btn_fit_scatter.clicked.connect(self._on_fit_scatter_clicked)
+        control_layout.addWidget(self.btn_fit_scatter)
+
+        # --- Temperature constants (for TOF fit → T directly) ---
+        tof_group = QtWidgets.QGroupBox("TOF Temperature Constants")
+        tof_layout = QtWidgets.QFormLayout(tof_group)
+
+        self.spin_kb = QtWidgets.QDoubleSpinBox()
+        self.spin_kb.setDecimals(6)
+        self.spin_kb.setRange(1e-30, 1e-10)
+        self.spin_kb.setValue(1.380649e-23)   # Boltzmann constant [J/K]
+        self.spin_kb.setSingleStep(1e-25)
+        self.spin_kb.setToolTip("Boltzmann constant k_B [J/K]")
+        self.spin_kb.setDecimals(4)  # show in scientific notation via large range
+        # Use a line-edit so the user can type directly:
+        self.edit_kb = QtWidgets.QLineEdit("1.380649e-23")
+        self.edit_kb.setToolTip("Boltzmann constant k_B [J/K]")
+        tof_layout.addRow("k_B  [J/K]:", self.edit_kb)
+
+        self.edit_mass = QtWidgets.QLineEdit("2.207e-25")
+        self.edit_mass.setToolTip(
+            "Atom mass [kg]"
+        )
+        tof_layout.addRow("Mass  [kg]:", self.edit_mass)
+
+        control_layout.addWidget(tof_group)
+
+        self.btn_clear_fit = QtWidgets.QPushButton("Clear Fit")
+        self.btn_clear_fit.setStyleSheet("padding: 5px;")
+        self.btn_clear_fit.clicked.connect(self._on_clear_fit_clicked)
+        control_layout.addWidget(self.btn_clear_fit)
+
+        control_layout.addWidget(QtWidgets.QLabel("─" * 30))
 
         # Action buttons
         self.btn_metadata = QtWidgets.QPushButton("Show Metadata")
@@ -180,6 +277,8 @@ class SequenceWindow(QtWidgets.QMainWindow):
         self._seq_x = []
         self._seq_y = []
         self.scatter_item.setData([], [])
+        # Clear any previous fit overlay when starting a new sequence
+        self._on_clear_fit_clicked()
 
         self.btn_process.setText("Processing...")
         self.btn_process.setEnabled(False)
@@ -208,6 +307,67 @@ class SequenceWindow(QtWidgets.QMainWindow):
         """Re-enables the process button when all scans are done."""
         self.btn_process.setText("Process Sequence")
         self.btn_process.setEnabled(True)
+
+    # --- Scatter-plot fitting ---
+
+    def _on_fit_scatter_clicked(self):
+        """Emits fitScatterRequested with the selected scatter fit model."""
+        model_text = self.combo_scatter_fit.currentText()
+        if model_text == "None":
+            self._on_clear_fit_clicked()
+            return
+        # Extract model key (first word)
+        model_key = model_text.split()[0]
+        self.fitScatterRequested.emit(model_key)
+
+    def _on_clear_fit_clicked(self):
+        """Removes the fit overlay and hides the results panel."""
+        self.fit_curve_item.setData([], [])
+        self.results_group.setVisible(False)
+
+    def show_scatter_fit(self, model_name, x_fit, y_fit, param_labels,
+                         param_values, param_errors, quality_text):
+        """Draws the fit curve and populates the results panel.
+
+        Args:
+            model_name: Human-readable name of the fit model.
+            x_fit: 1D array of x values for the smooth fit curve.
+            y_fit: 1D array of y values for the smooth fit curve.
+            param_labels: List of parameter name strings.
+            param_values: List of float parameter values.
+            param_errors: List of float parameter standard deviations.
+            quality_text: String summarising fit quality (R², χ², …).
+        """
+        self.fit_curve_item.setData(x_fit, y_fit)
+
+        self.lbl_fit_model_used.setText(f"Model: {model_name}")
+
+        self.results_table.setRowCount(len(param_labels))
+        for row, (label, val, err) in enumerate(
+            zip(param_labels, param_values, param_errors)
+        ):
+            self.results_table.setItem(
+                row, 0, QtWidgets.QTableWidgetItem(label)
+            )
+            self.results_table.setItem(
+                row, 1, QtWidgets.QTableWidgetItem(f"{val:.6g}")
+            )
+            err_text = f"± {err:.6g}" if err is not None else "n/a"
+            self.results_table.setItem(
+                row, 2, QtWidgets.QTableWidgetItem(err_text)
+            )
+        self.results_table.resizeColumnsToContents()
+
+        self.lbl_fit_quality.setText(quality_text)
+        self.results_group.setVisible(True)
+
+    def show_scatter_fit_error(self, message):
+        """Shows a warning dialog when the scatter fit fails.
+
+        Args:
+            message: Human-readable description of the failure.
+        """
+        QtWidgets.QMessageBox.warning(self, "Fit Failed", message)
 
     def _on_save_csv_clicked(self):
         """Opens a file dialog and emits saveCsvRequested with the path."""
@@ -240,3 +400,19 @@ class SequenceWindow(QtWidgets.QMainWindow):
 
         layout.addWidget(table)
         dialog.exec_()
+
+    def get_temperature_constants(self):
+        """Returns the user-provided Boltzmann constant and atom mass.
+
+        Returns:
+            Tuple of (k_B, mass) as floats.
+        """
+        try:
+            k_b = float(self.edit_kb.text())
+        except ValueError:
+            k_b = 1.380649e-23
+        try:
+            mass = float(self.edit_mass.text())
+        except ValueError:
+            mass = 2.207e-25
+        return k_b, mass

@@ -1,7 +1,11 @@
 """Analysis module for MOT image processing.
 
-Provides optical density calculation, 2D Gaussian fitting with physical
-validation, and initial parameter estimation for curve fitting.
+Provides:
+  - Optical density calculation.
+  - 2D Gaussian fitting with physical validation and initial-parameter
+    estimation.
+  - 1D scatter-plot fit models (linear, exponential, Gaussian, temperature TOF)
+    and the ``fit_scatter_data`` dispatcher used by the sequence controller.
 """
 
 import numpy as np
@@ -226,3 +230,27 @@ def fit_function(image, func, p0=None):
     fitted_image = fitted_flat.reshape(rows, cols)
 
     return fitted_image, popt
+
+
+# =============================================================================
+# 1-D scatter-plot fit models
+# =============================================================================
+
+def fit_linear(x, a, b):
+    """Linear model: y = a·x + b."""
+    return a * x + b
+
+
+def fit_exponential(x, A, tau, C):
+    """Exponential decay model: y = A·exp(−x/τ) + C."""
+    return A * np.exp(-x / tau) + C
+
+
+def fit_gaussian_1d(x, A, x0, sigma, B):
+    """1-D Gaussian model: y = A·exp(−(x−x₀)²/(2σ²)) + B."""
+    return A * np.exp(-0.5 * ((x - x0) / sigma) ** 2) + B
+
+
+def fit_temperature_tof(t, sigma0_sq, kT_over_m):
+    """TOF expansion: σ²(t) = σ₀² + (kT/m)·t²."""
+    return sigma0_sq + kT_over_m * t ** 2
