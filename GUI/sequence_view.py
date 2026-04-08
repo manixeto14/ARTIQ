@@ -6,6 +6,7 @@ Supports post-processing curve fits (linear, exponential, Gaussian, temperature)
 on the resulting scatter plot.
 """
 
+import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtWidgets, QtGui
 
@@ -60,11 +61,25 @@ class SequenceWindow(QtWidgets.QMainWindow):
         self.plot_widget.setBackground('w')
         self.plot_widget.setLabel('bottom', "X Variable")
         self.plot_widget.setLabel('left', "Y Variable")
-        self.scatter_item = pg.ScatterPlotItem(
+        # Actual points (faint/transparent)
+        self.raw_scatter_item = pg.ScatterPlotItem(
             size=10, pen=pg.mkPen(None),
+            brush=pg.mkBrush(0, 114, 178, 50)
+        )
+        self.plot_widget.addItem(self.raw_scatter_item)
+
+        # Error bars for the mean points
+        self.error_bars_item = pg.ErrorBarItem(
+            pen=pg.mkPen(color=(0, 114, 178), width=1.5)
+        )
+        self.plot_widget.addItem(self.error_bars_item)
+
+        # Mean points
+        self.mean_scatter_item = pg.ScatterPlotItem(
+            size=15, pen=pg.mkPen(None),
             brush=pg.mkBrush(0, 114, 178)
         )
-        self.plot_widget.addItem(self.scatter_item)
+        self.plot_widget.addItem(self.mean_scatter_item)
 
         # Fit overlay curve on the scatter plot
         self.fit_curve_item = pg.PlotDataItem(
@@ -276,7 +291,9 @@ class SequenceWindow(QtWidgets.QMainWindow):
         # Reset progressive plot data
         self._seq_x = []
         self._seq_y = []
-        self.scatter_item.setData([], [])
+        self.raw_scatter_item.setData([], [])
+        self.mean_scatter_item.setData([], [])
+        self.error_bars_item.setData(x=np.array([]), y=np.array([]), top=np.array([]), bottom=np.array([]))
         # Clear any previous fit overlay when starting a new sequence
         self._on_clear_fit_clicked()
 
@@ -300,7 +317,46 @@ class SequenceWindow(QtWidgets.QMainWindow):
         """
         self._seq_x.append(x)
         self._seq_y.append(y)
-        self.scatter_item.setData(self._seq_x, self._seq_y)
+        self._update_plot()
+
+    def _update_plot(self):
+        """Recalculates means and error bars, and updates the view."""
+        if not self._seq_x:
+            return
+
+        x_raw = np.array(self._seq_x)
+        y_raw = np.array(self._seq_y)
+        
+        self.raw_scatter_item.setData(x_raw, y_raw)
+        
+        unique_x = np.unique(x_raw)
+        mean_x = []
+        mean_y = []
+        std_y = []
+
+        for ux in unique_x:
+            ys = y_raw[x_raw == ux]
+            mean_x.append(ux)
+            mean_y.append(np.mean(ys))
+            if len(ys) > 1:
+                std_y.append(np.std(ys, ddof=1)) # sample std
+            else:
+                std_y.append(0.0)
+
+        mean_x = np.array(mean_x)
+        mean_y = np.array(mean_y)
+        std_y = np.array(std_y)
+
+        self.mean_scatter_item.setData(mean_x, mean_y)
+        
+        # Adjust the cap widths (beam)
+        beam_w = 0.05
+        if len(mean_x) > 1:
+            span = np.max(mean_x) - np.min(mean_x)
+            if span > 0:
+                beam_w = span * 0.02
+        
+        self.error_bars_item.setData(x=mean_x, y=mean_y, top=std_y, bottom=std_y, beam=beam_w)
         self.plot_widget.autoRange()
 
     def on_sequence_finished(self):
