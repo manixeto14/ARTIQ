@@ -418,6 +418,38 @@ class FitModel(QtCore.QObject):
             self.current_img = img
             self.dataUpdated.emit()
 
+    def get_image_data(self, index, img_type):
+        """Retrieves specific image data directly from HDF5 without modifying the primary state.
+        
+        Args:
+            index: Integer index of the scan group.
+            img_type: Display type string (OD, Background, etc.)
+            
+        Returns:
+            2D numpy array of the image, or None if unavailable.
+        """
+        if index < 0 or not self.current_h5_path or index >= len(self.scan_groups):
+            return None
+            
+        group_path = self.scan_groups[index]
+        try:
+            with h5py.File(self.current_h5_path, 'r') as f:
+                group = f[group_path] if group_path != '/' else f
+                if img_type == "Background":
+                    return group['_background'][()]
+                elif img_type == "With atoms":
+                    return group['_withatoms'][()]
+                elif img_type == "Without atoms":
+                    return group['_withoutatoms'][()]
+                elif img_type == "OD":
+                    bg = group['_background'][()]
+                    wa = group['_withatoms'][()]
+                    woa = group['_withoutatoms'][()]
+                    return np.nan_to_num(optical_density(I_at=wa, I_0=woa, I_bg=bg), nan=0.0)
+        except Exception:
+            return None
+        return None
+
     def start_fit(self, model_name):
         """Starts a background-thread 2D fit on the current image.
 

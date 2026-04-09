@@ -40,6 +40,10 @@ class FitController(QtCore.QObject):
         self.view.setRoiRequested.connect(self.on_set_roi)
         self.view.resetRoiRequested.connect(self.on_reset_roi)
         self.view.openSequenceRequested.connect(self.on_open_sequence)
+        
+        # Grid layout toggles and secondary viewer requests
+        self.view.toggleGridRequested.connect(self.view.set_grid_visible)
+        self.view.requestExtraViewerImage.connect(self.on_request_extra_viewer_image)
 
         self.sequence_window = None
         self.sequence_controller = None
@@ -90,6 +94,12 @@ class FitController(QtCore.QObject):
             message: Error description string to show.
         """
         QtWidgets.QMessageBox.critical(self.view, "Error", message)
+
+    def on_request_extra_viewer_image(self, viewer_idx, scan_index, disp_type):
+        """Fetches directly from the model without changing the global state and updates the extra viewer."""
+        img = self.model.get_image_data(scan_index, disp_type)
+        if img is not None:
+            self.view.viewers[viewer_idx].set_image(img, disp_type, preserve_levels=False)
 
     def data_changed(self, value, metadata, persist, mods):
         """Handles ARTIQ dataset change events for live camera updates.
