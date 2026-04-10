@@ -119,13 +119,17 @@ class SingleImageView(QtWidgets.QWidget):
             self._last_disp_type = disp_type
             levels = None
         else:
-            levels = self.hist.getLevels()
+            levels = self.hist.getLevels() if hasattr(self, 'hist') else None
             
         if not preserve_levels or levels is None:
             self.img_item.setImage(image, autoLevels=True)
-            self.hist.gradient.setColorMap(pg.colormap.get('jet', source='matplotlib'))
+            if hasattr(self, 'hist'):
+                self.hist.gradient.setColorMap(pg.colormap.get('jet', source='matplotlib'))
         else:
             self.img_item.setImage(image, autoLevels=False, levels=levels)
+            
+        # Strictly enforce color map native to ImageItem
+        self.img_item.setColorMap(pg.colormap.get('jet', source='matplotlib'))
 
         max_x, max_y = image.shape
         x_margin = np.sum(image, axis=1)
@@ -157,6 +161,8 @@ class SingleImageView(QtWidgets.QWidget):
     def set_fitted_surface(self, image):
         # Displays a standalone fitted 2D Gaussian image (Viewer 2)
         self.img_item.setImage(image, autoLevels=True)
+        self.img_item.setColorMap(pg.colormap.get('jet', source='matplotlib'))
+        
         max_x, max_y = image.shape
         x_margin = np.sum(image, axis=1)
         y_margin = np.sum(image, axis=0)
@@ -468,7 +474,7 @@ class FitView(QtWidgets.QWidget):
             self.roi.setSize([max_x // 2, max_y // 2])
 
     def set_fitted_image(self, image, roi_slice=None, popt=None):
-        self.btn_toggle_grid.setChecked(True)
+        self.viewers[1].show()
         self.viewers[1].show_as_fit_result(True)
         offset_x = roi_slice[0].start if roi_slice and roi_slice[0].start is not None else 0
         offset_y = roi_slice[1].start if roi_slice and roi_slice[1].start is not None else 0
@@ -482,6 +488,8 @@ class FitView(QtWidgets.QWidget):
     def clear_fitted_image(self):
         self.viewers[1].show_as_fit_result(False)
         self.viewers[1].clear()
+        if not self.btn_toggle_grid.isChecked():
+            self.viewers[1].hide()
 
     def set_grid_visible(self, visible):
         for i in range(1, 4):

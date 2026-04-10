@@ -31,4 +31,6 @@ Thumbs.db
 # ── Jupyter (if ever used) ────────────────────────────────────────────────────
 .ipynb_checkpoints/
 *.ipynb
-GUI/Commit 0704.zip
+
+# Zips
+*.zip
